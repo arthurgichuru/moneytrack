@@ -209,8 +209,52 @@ Keep this loop in mind; every screen is an instance of it.
 `fund_management_company.dart`, `fund_performance.dart`
 
 Models are plain Dart classes that mirror the Postgres tables **column for
-column**. They are the "shapes" that flow up through every layer. Four rules
-are followed by all of them:
+column**. They are the "shapes" that flow up through every layer.
+
+The four tables and their relationships (this is the schema iteration 2's
+Supabase database will mirror exactly):
+
+```mermaid
+erDiagram
+    FUND_MANAGEMENT_COMPANIES ||--o{ FUNDS : "manages"
+    FUND_CATEGORIES           ||--o{ FUNDS : "classifies"
+    FUNDS                     ||--o{ FUND_PERFORMANCE : "has monthly"
+
+    FUND_MANAGEMENT_COMPANIES {
+        int company_id PK
+        string company_name
+        string regulatory_status
+        bool is_active
+    }
+    FUND_CATEGORIES {
+        int category_id PK
+        string category_name
+        string risk_level
+    }
+    FUNDS {
+        int fund_id PK
+        string fund_name
+        string fund_code
+        int company_id FK
+        int category_id FK
+        double management_fee
+        bool is_active
+    }
+    FUND_PERFORMANCE {
+        int performance_id PK
+        int fund_id FK
+        date performance_date
+        double annual_return_rate
+        int rank_position
+    }
+```
+
+A `Fund` carries two nullable foreign keys — `company_id` and `category_id` —
+which the UI resolves into a manager name and a category label via the
+controllers' `companiesById` / `categoriesById` lookup maps. Each fund fans out
+to twelve `FundPerformance` rows (one per month), which power the detail
+screen's chart, stats and history. Four rules are followed by all of the
+models:
 
 1. **All fields are `final`** — models are immutable. State can only change by
    building a *new* object, never by mutating an existing one. This is what
@@ -1142,7 +1186,41 @@ every layer.
    renders the filter chips.
 
 Each async result lands independently and repaints only the widgets that read
-the signal it touched.
+the signal it touched. The three loads race in parallel and each paints in when
+it resolves:
+
+```mermaid
+sequenceDiagram
+    participant M as main()
+    participant DI as DI
+    participant LS as FundsListScreen
+    participant FC as FundController
+    participant PC as FundPerformanceController
+    participant CC as FundCategoryController
+    participant R as Dummy repositories
+
+    M->>DI: DI.init() (build repos + controllers)
+    M->>LS: runApp → first frame
+    Note over LS: paints instantly with a spinner<br/>(isLoading && funds empty)
+
+    LS->>FC: loadFunds() (not awaited)
+    LS->>PC: loadLatestReturns() (not awaited)
+    LS->>CC: loadCategories() (not awaited)
+
+    par funds + companies
+        FC->>R: getFunds() + getCompanies()
+        R-->>FC: lists (~350ms)
+        Note over FC: funds/companies signals set<br/>→ filteredFunds recomputes → list repaints
+    and latest returns
+        PC->>R: getLatestReturns()
+        R-->>PC: {fundId: rate}
+        Note over PC: latestReturns set<br/>→ each row's badge repaints
+    and categories
+        CC->>R: getCategories()
+        R-->>CC: categories
+        Note over CC: categories set<br/>→ chip row repaints
+    end
+```
 
 ### Journey B — the user searches for "equity"
 
