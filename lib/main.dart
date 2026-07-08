@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-
 import 'dependency_injection.dart';
 import 'screens/funds_list_screen.dart';
 import 'services/supabase_service.dart';

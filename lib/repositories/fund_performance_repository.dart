@@ -18,9 +18,7 @@ class DummyFundPerformanceRepository implements FundPerformanceRepository {
   @override
   Future<List<FundPerformance>> getPerformanceForFund(int fundId) async {
     await Future<void>.delayed(const Duration(milliseconds: 350));
-    final rows = DummyData.performance
-        .where((p) => p.fundId == fundId)
-        .toList()
+    final rows = DummyData.performance.where((p) => p.fundId == fundId).toList()
       ..sort((a, b) => a.performanceDate.compareTo(b.performanceDate));
     return rows;
   }

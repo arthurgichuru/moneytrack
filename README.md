@@ -1,5 +1,7 @@
 # MoneyTrack
 
+[![CI](https://github.com/arthurgichuru/moneytrack/actions/workflows/ci.yml/badge.svg)](https://github.com/arthurgichuru/moneytrack/actions/workflows/ci.yml)
+
 Flutter app for browsing unit-trust fund performance. Iteration 1 runs
 entirely on dummy data; iteration 2 swaps in Supabase.
 

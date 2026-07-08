@@ -83,8 +83,7 @@ class _FundFormScreenState extends State<FundFormScreen> {
 
   /// Converts whitespace-only input to null so optional DB columns
   /// stay NULL instead of storing empty strings.
-  String? _emptyToNull(String text) =>
-      text.trim().isEmpty ? null : text.trim();
+  String? _emptyToNull(String text) => text.trim().isEmpty ? null : text.trim();
 
   @override
   Widget build(BuildContext context) {
@@ -127,8 +126,8 @@ class _FundFormScreenState extends State<FundFormScreen> {
                     decoration: const InputDecoration(
                         labelText: 'Mgmt fee % p.a.',
                         border: OutlineInputBorder()),
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
                     // Optional, but if present it must parse as a number.
                     validator: (value) {
                       if (value == null || value.trim().isEmpty) return null;

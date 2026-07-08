@@ -115,8 +115,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
           _StatTile(label: '12-mo average', value: pct(average)),
           const SizedBox(width: 8),
           _StatTile(
-              label: 'Best rank',
-              value: bestRank == null ? '—' : '#$bestRank'),
+              label: 'Best rank', value: bestRank == null ? '—' : '#$bestRank'),
         ],
       );
     });
@@ -217,8 +216,11 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
               const SizedBox(height: 8),
               _factRow('Company', company.companyName),
               _factRow('Status', company.regulatoryStatus ?? '—'),
-              _factRow('Location',
-                  [company.city, company.country].whereType<String>().join(', ')),
+              _factRow(
+                  'Location',
+                  [company.city, company.country]
+                      .whereType<String>()
+                      .join(', ')),
               _factRow('Email', company.email ?? '—'),
               _factRow('Phone', company.phone ?? '—'),
             ],
@@ -285,8 +287,7 @@ class _FundDetailScreenState extends State<FundDetailScreen> {
           children: [
             SizedBox(
               width: 130,
-              child: Text(label,
-                  style: TextStyle(color: Colors.grey.shade600)),
+              child: Text(label, style: TextStyle(color: Colors.grey.shade600)),
             ),
             Expanded(child: Text(value)),
           ],
@@ -344,7 +345,8 @@ class _SparklinePainter extends CustomPainter {
     Offset pointAt(int i) {
       final x = size.width * i / (values.length - 1);
       final normalized = (values[i] - minV) / range; // 0 = min, 1 = max
-      final y = size.height - (normalized * (size.height * 0.85)) -
+      final y = size.height -
+          (normalized * (size.height * 0.85)) -
           (size.height * 0.075);
       return Offset(x, y);
     }

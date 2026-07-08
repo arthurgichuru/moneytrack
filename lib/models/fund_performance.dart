@@ -40,8 +40,7 @@ class FundPerformance {
   Map<String, dynamic> toJson() => {
         'performance_id': performanceId,
         'fund_id': fundId,
-        'performance_date':
-            performanceDate.toIso8601String().substring(0, 10),
+        'performance_date': performanceDate.toIso8601String().substring(0, 10),
         'annual_return_rate': annualReturnRate,
         'rank_position': rankPosition,
         'created_at': createdAt.toIso8601String(),

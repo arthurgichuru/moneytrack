@@ -29,8 +29,8 @@ class FundPerformanceController {
   // screen (which reloads history) refreshes all four automatically.
 
   /// Most recent month's return, or null before data arrives.
-  late final latestReturn = computed(() =>
-      history.value.isEmpty ? null : history.value.last.annualReturnRate);
+  late final latestReturn = computed(
+      () => history.value.isEmpty ? null : history.value.last.annualReturnRate);
 
   /// Simple 12-month average return.
   late final averageReturn = computed(() {
