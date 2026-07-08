@@ -81,6 +81,52 @@ dependencies:
 No `provider`, no `bloc`, no `riverpod`, no charting library. That's the point
 — the app demonstrates that a clean layered design plus signals is enough.
 
+### The same picture, rendered
+
+The diagram below shows the four layers, the write-path (solid, top-down) and
+the reactive read-path (dashed, bottom-up), with `DI` wiring the graph once at
+startup.
+
+```mermaid
+flowchart TB
+    subgraph UI["UI · screens/ + main.dart"]
+        S1[FundsListScreen]
+        S2[FundDetailScreen]
+        S3[FundFormScreen]
+    end
+    subgraph STATE["STATE · controllers/"]
+        C1[FundController]
+        C2[FundCategoryController]
+        C3[FundPerformanceController]
+    end
+    subgraph DATA["DATA · repositories/ (abstract contracts)"]
+        R1[FundRepository]
+        R2[FundCategoryRepository]
+        R3[FundManagementCompanyRepository]
+        R4[FundPerformanceRepository]
+    end
+    subgraph SHAPES["SHAPES · models/ + DummyData"]
+        M[Fund · FundCategory · FundManagementCompany · FundPerformance]
+    end
+
+    UI -- "read .value via Watch()" --> STATE
+    STATE -- "call actions (write signals)" --> UI
+    STATE -- "await Future&lt;...&gt;" --> DATA
+    DATA -- "construct / return" --> SHAPES
+
+    DI([DI.init · service locator]) -. "builds once at startup" .-> STATE
+    DI -. "chooses Dummy* impls" .-> DATA
+
+    classDef layer fill:#e8f5f2,stroke:#00695c,color:#003d33;
+    class UI,STATE,DATA,SHAPES layer;
+    classDef di fill:#fff3e0,stroke:#e65100,color:#5c2c00;
+    class DI di;
+```
+
+The key visual truth: arrows into `DATA` and `SHAPES` only ever point at the
+**abstract** boxes. No screen or controller has an edge to a `Dummy*` class —
+that's why `DI` can repoint them at Supabase without anything above noticing.
+
 ---
 
 ## 2. A 5-minute primer on signals
@@ -139,6 +185,19 @@ Watch((context) {
 **Mental model for the entire app:**
 > Widgets *write* to signals on user interaction → `computed` values recalculate
 > → `Watch` widgets that read them repaint. No glue code in between.
+
+```mermaid
+flowchart LR
+    A["User interaction<br/>(type, tap, save)"] -->|"signal.value = x"| B([writable signal])
+    B -->|"auto-tracked read"| C([computed<br/>re-evaluates])
+    C -->|"read inside builder"| D["Watch()<br/>repaints its subtree"]
+    D -.->|"user acts again"| A
+
+    classDef sig fill:#e8f5f2,stroke:#00695c,color:#003d33;
+    class B,C sig;
+    classDef ui fill:#fff3e0,stroke:#e65100,color:#5c2c00;
+    class A,D ui;
+```
 
 Keep this loop in mind; every screen is an instance of it.
 
@@ -1097,7 +1156,24 @@ the signal it touched.
    writes `null` and clears the category filter.
 
 No filtering code runs in any widget — the `computed` dependency graph does all
-of it.
+of it. As a sequence:
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant TF as TextField (search box)
+    participant SQ as searchQuery (signal)
+    participant FF as filteredFunds (computed)
+    participant W as Watch (list body)
+
+    User->>TF: types "equity"
+    TF->>SQ: searchQuery.value = "equity"
+    Note over SQ,FF: signal change invalidates<br/>every computed that read it
+    SQ-->>FF: recompute (filter + sort)
+    FF-->>W: value changed → repaint subtree
+    W-->>User: narrowed list shown
+    Note over TF: the TextField never rebuilds —<br/>it writes a signal but reads none
+```
 
 ### Journey C — the user edits a fund's fee
 
