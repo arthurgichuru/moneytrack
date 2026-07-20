@@ -28,6 +28,9 @@ build/
 # Environment
 .env
 
+# Local design reference images (not tracked)
+design/
+
 # Symbolication related
 app.*.symbols
 

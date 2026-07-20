@@ -23,12 +23,31 @@ class MoneyTrackApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Binance-style light theme: white surfaces, black text, a gold accent,
+    // and green/red for gains/losses (the pill colours live in the screens).
+    const gold = Color(0xFFF0B90B);
     return MaterialApp(
       title: 'MoneyTrack',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF00695C)),
         useMaterial3: true,
+        scaffoldBackgroundColor: Colors.white,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: gold,
+          brightness: Brightness.light,
+        ).copyWith(surface: Colors.white),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          centerTitle: false,
+          titleTextStyle: TextStyle(
+            color: Colors.black,
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         cardTheme: const CardThemeData(elevation: 1),
       ),
       home: const FundsListScreen(),
