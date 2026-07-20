@@ -1,0 +1,14 @@
+{
+  "name": "moneytrack-doc-tools",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Doc verification tooling (Mermaid diagram + code-fence checks). Separate from the Flutter app.",
+  "scripts": {
+    "verify": "node verify_diagrams.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.0",
+    "mermaid": "^11.16.0"
+  }
+}

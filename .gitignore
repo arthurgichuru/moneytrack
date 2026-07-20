@@ -31,6 +31,9 @@ build/
 # Local design reference images (not tracked)
 design/
 
+# Node deps for the doc tooling (see tool/)
+tool/node_modules/
+
 # Symbolication related
 app.*.symbols
 
