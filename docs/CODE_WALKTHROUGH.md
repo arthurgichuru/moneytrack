@@ -19,7 +19,7 @@ to the row of data that produced it.
 2. [A 5-minute primer on signals](#2-a-5-minute-primer-on-signals)
 3. [Layer 0 — the models](#3-layer-0--the-models)
 4. [Layer 1 — the repositories](#4-layer-1--the-repositories)
-5. [The seed data (`DummyData`)](#5-the-seed-data-dummydata)
+5. [Seed data: the fund catalog and the real returns](#5-seed-data-the-fund-catalog-and-the-real-returns)
 6. [The wiring — dependency injection](#6-the-wiring--dependency-injection)
 7. [Layer 2 — the controllers](#7-layer-2--the-controllers)
 8. [Bootstrapping — `main.dart`](#8-bootstrapping--maindart)
@@ -58,7 +58,7 @@ directly beneath it.
 └───────────────┬────────────────────────────────────────────────┘
                 │ constructs
 ┌───────────────▼────────────────────────────────────────────────┐
-│  MODELS + DummyData    Fund · FundCategory · … + seed lists     │  SHAPES
+│  MODELS + FundCatalog/RealFundData    Fund · FundCategory · …   │  SHAPES
 └──────────────────────────────────────────────────────────────────┘
 
         DI (dependency_injection.dart) wires all of this together once,
@@ -105,7 +105,7 @@ flowchart TB
         R3[FundManagementCompanyRepository]
         R4[FundPerformanceRepository]
     end
-    subgraph SHAPES["SHAPES · models/ + DummyData"]
+    subgraph SHAPES["SHAPES · models/ + FundCatalog + RealFundData"]
         M[Fund · FundCategory · FundManagementCompany · FundPerformance]
     end
 
@@ -386,7 +386,7 @@ Two design decisions are baked into the contract itself:
 class DummyFundRepository implements FundRepository {
   // A PRIVATE copy of the seed list, so create/update/delete behave like a
   // real backend for the app session without mutating the shared seed data.
-  final List<Fund> _funds = List<Fund>.from(DummyData.funds);
+  final List<Fund> _funds = List<Fund>.from(FundCatalog.funds);
 
   int get _nextId =>
       _funds.map((f) => f.fundId).fold(0, (a, b) => a > b ? a : b) + 1;
@@ -395,7 +395,7 @@ class DummyFundRepository implements FundRepository {
 Line-by-line reasoning:
 
 - **The private working copy** (`_funds`) is critical. If the repository
-  mutated `DummyData.funds` directly, every repository instance (and the test)
+  mutated `FundCatalog.funds` directly, every repository instance (and the test)
   would share and corrupt the same list. Copying on construction isolates state.
 - **`_nextId`** computes `max(existing ids) + 1`, imitating a Postgres `SERIAL`
   column so newly created funds get realistic sequential ids.
@@ -437,7 +437,7 @@ reads.
 categories sorted by name:
 
 ```dart
-final list = List<FundCategory>.from(DummyData.categories)
+final list = List<FundCategory>.from(FundCatalog.categories)
   ..sort((a, b) => a.categoryName.compareTo(b.categoryName));
 ```
 
@@ -462,16 +462,18 @@ abstract class FundPerformanceRepository {
 ```
 
 `getPerformanceForFund` filters to one fund and sorts oldest→newest, which is
-exactly the order the sparkline painter wants (left = oldest, right = newest).
+exactly the order the area-chart painter wants (left = oldest, right = newest).
 
-`getLatestReturns` is a small aggregation (`fund_performance_repository.dart:27-39`):
+Both methods read from **`RealFundData.performance`** — the one place in the app
+backed by *real* published figures rather than the illustrative catalog (see
+§5). `getLatestReturns` is a small aggregation (`fund_performance_repository.dart`):
 
 ```dart
-final latestDate = DummyData.performance
+final latestDate = RealFundData.performance
     .map((p) => p.performanceDate)
     .reduce((a, b) => a.isAfter(b) ? a : b);          // newest month in table
 return {
-  for (final p in DummyData.performance)
+  for (final p in RealFundData.performance)
     if (p.performanceDate == latestDate && p.annualReturnRate != null)
       p.fundId: p.annualReturnRate!,                  // {fundId: rate}
 };
@@ -479,71 +481,90 @@ return {
 
 It finds the most recent month across the whole table, then builds a
 `{fundId: rate}` map for just that month. The list screen uses this single map
-to render the return badge on every row — an O(1) lookup per row instead of a
+to render the return pill on every row — an O(1) lookup per row instead of a
 fetch per fund.
 
 **Takeaway:** repositories define *what data operations exist* (the abstract
-class) and *where the data currently comes from* (the dummy class). The seam
-between those two is where iteration 2 will cut.
+class) and *where the data currently comes from* (the dummy class — catalog for
+funds, `RealFundData` for performance). The seam between those two is where
+iteration 2 will cut.
 
 ---
 
-## 5. The seed data (`DummyData`)
+## 5. Seed data: the fund catalog and the real returns
 
-**File:** `lib/repositories/dummy_data.dart`
+The in-memory data comes from **two** static-only holders, split by *what kind*
+of data they hold — reference data vs. the performance series:
 
-This is the in-memory "database" the dummy repositories read from. It's a
-static-only holder (`DummyData._();` forbids instances). In iteration 2 this
-entire file is deleted. Nothing outside the `repositories/` folder even knows
-it exists — which is precisely what makes it deletable.
+- **`FundCatalog`** (`lib/repositories/fund_catalog.dart`) — the catalog of
+  funds, their categories, and their management companies (illustrative sample
+  records).
+- **`RealFundData`** (`lib/repositories/real_fund_data.dart`) — the monthly
+  return series, sourced from *real* published figures.
 
-It seeds four things:
+Both are deleted in iteration 2 (their shapes come from Supabase instead), and
+nothing outside `repositories/` knows either exists.
 
-- **4 categories** (`dummy_data.dart:19-51`) — Money Market, Fixed Income,
-  Equity, Balanced, each with a risk level.
-- **5 companies** (`dummy_data.dart:54-121`) — realistic Kenyan fund managers,
-  all "CMA Licensed".
-- **10 funds** (`dummy_data.dart:124-194`) — built via a private `_fund(...)`
-  helper that fills in the fields every fund shares (currency `KES`,
-  timestamps), keeping the list readable.
+### 5.1 `FundCatalog` — the reference catalog
 
-### The clever bit — generated performance history
+A static-only holder (`FundCatalog._();` forbids instances) seeding three
+things:
 
-The 120 performance rows (10 funds × 12 months) aren't hand-written; they're
-**generated deterministically** (`dummy_data.dart:234-267`). Read this method
-carefully, because the shape of the data it produces is what every chart and
-statistic on the detail screen ultimately visualizes.
+- **4 categories** (`fund_catalog.dart`) — Money Market, Fixed Income, Equity,
+  Balanced, each with a risk level.
+- **5 companies** — realistic Kenyan fund managers, all "CMA Licensed".
+- **10 funds** — built via a private `_fund(...)` helper that fills in the
+  fields every fund shares (currency `KES`, timestamps), keeping the list
+  readable.
+
+That's *all* it holds — identity and relationships, no returns. This is the file
+`DummyFundRepository`, `DummyFundCategoryRepository`, and
+`DummyFundManagementCompanyRepository` read from.
+
+### 5.2 `RealFundData` — the real monthly performance
+
+Performance is the one thing in the app backed by **real published data**, so it
+lives on its own. `RealFundData` holds a `Map<DateTime, Map<int, double>>` — for
+each month (Jul 2025 – Jun 2026), the gross annual return (% p.a.) per fund id:
 
 ```dart
-static List<FundPerformance> _generatePerformance() {
+static final Map<DateTime, Map<int, double>> _monthlyGrossReturns = {
+  //                      CIC   Sanlam Britam Etica  NCBA  …
+  DateTime(2026, 6, 1): {
+    1: 8.12, 2: 8.58, 3: 9.25, 4: 10.40, // R = real published figures
+    5: 7.50, 6: 10.00, 7: 37.00, 8: 34.50, 9: 17.80, 10: 16.20, // E = estimated
+  },
+  // … 11 more months …
+};
+```
+
+The file's header documents **provenance** for every number, tagged inline:
+`[R]` real published figure (from Vasili Africa's monthly Money Market Wrap-Ups,
+compiled from Kenyan daily-press fund disclosures), `[I]` interpolated between
+two real anchor months (MMFs only), and `[E]` estimated (equity/balanced funds,
+which publish no monthly series — derived from the NSE rally less a fee/cash-drag
+haircut). The money-market figures are largely real; the rest is clearly flagged
+as illustrative and slated for replacement with fact-sheet numbers.
+
+`_build()` turns that map into the `FundPerformance` rows the repositories serve
+— and this is where the **ranking** happens (`real_fund_data.dart`):
+
+```dart
+static List<FundPerformance> _build() {
   final rows = <FundPerformance>[];
-  final now = DateTime.now();
-  // One Random per fund, SEEDED by fund id -> stable but distinct series.
-  final randoms = {for (final f in funds) f.fundId: Random(f.fundId * 7)};
   var id = 1;
-
-  for (var monthsAgo = 11; monthsAgo >= 0; monthsAgo--) {
-    final date = DateTime(now.year, now.month - monthsAgo, 1);
-
-    // Step 1: each fund's return this month = category base rate + jitter.
-    final monthRates = <int, double>{};
-    for (final fund in funds) {
-      final jitter = (randoms[fund.fundId]!.nextDouble() * 3.0) - 1.5; // ±1.5
-      final rate = _baseRate(fund.categoryId) + jitter;
-      monthRates[fund.fundId] = double.parse(rate.toStringAsFixed(2));
-    }
-
-    // Step 2: rank the month — best return gets rank 1.
-    final ranked = monthRates.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
+  final months = _monthlyGrossReturns.keys.toList()..sort();   // oldest first
+  for (final month in months) {
+    final ranked = _monthlyGrossReturns[month]!.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));            // best return first
     for (var i = 0; i < ranked.length; i++) {
       rows.add(FundPerformance(
         performanceId: id++,
         fundId: ranked[i].key,
-        performanceDate: date,
+        performanceDate: month,
         annualReturnRate: ranked[i].value,
-        rankPosition: i + 1,        // 1-based league position
-        createdAt: date,
+        rankPosition: i + 1,        // 1-based league position that month
+        createdAt: month,
       ));
     }
   }
@@ -551,24 +572,20 @@ static List<FundPerformance> _generatePerformance() {
 }
 ```
 
-Three things worth understanding:
+Each month's returns are sorted descending and assigned `rankPosition` 1..10,
+exactly like a published fund league table — that's the number the detail
+screen's "Best rank" stat mines. The result is exposed as the public static
+`RealFundData.performance`, which the performance repository reads (§4.2).
 
-1. **Seeded randomness = reproducibility.** `Random(f.fundId * 7)` seeds each
-   fund's generator with a fixed number, so a hot-restart always produces the
-   *same* 12-month series. The data looks random but is stable — essential for
-   a demo and for anyone comparing runs.
-2. **Category-anchored returns.** `_baseRate` (`dummy_data.dart:221-227`) gives
-   each category a realistic centre — money markets ~13%, bonds ~14.5%,
-   equities ~8% but volatile, balanced ~10.5% — and the `±1.5` jitter moves the
-   monthly value around that centre. This is why equity funds look choppier on
-   the chart than money-market funds.
-3. **Real ranking semantics.** Each month, every fund's return is sorted
-   descending and assigned `rankPosition` 1..10, exactly like a published fund
-   league table. That's the number the detail screen's "Best rank" stat mines.
+> **Historical note.** Earlier iterations *generated* this series
+> deterministically (a per-fund seeded RNG jittering around a per-category base
+> rate). That generator was replaced by the real data above; the ranking and
+> row shape are identical, so nothing downstream changed.
 
-**Takeaway:** the data layer is now complete. Models define shapes, `DummyData`
-seeds them, repositories serve them behind abstract contracts. Everything above
-this line is pure Dart with zero Flutter — and could be unit-tested as such.
+**Takeaway:** the data layer is now complete. Models define shapes, `FundCatalog`
+supplies the reference catalog and `RealFundData` the real returns, and
+repositories serve both behind abstract contracts. Everything above this line is
+pure Dart with zero Flutter — and could be unit-tested as such.
 
 ---
 
@@ -1407,7 +1424,8 @@ weight. To move from dummy data to a live backend:
    exactly — the rows deserialize with zero changes.
 4. Change the **four constructors** in `dependency_injection.dart` from
    `Dummy*Repository()` to `Supabase*Repository(...)`.
-5. Delete `lib/repositories/dummy_data.dart`.
+5. Delete the seed sources: `lib/repositories/fund_catalog.dart` and
+   `lib/repositories/real_fund_data.dart`.
 
 **Nothing in `controllers/` or `screens/` changes.** Every one of them depends
 only on the abstract repository types and on signals, both of which are
@@ -1421,7 +1439,7 @@ the thesis the entire architecture exists to prove.
 | Layer | Files | Owns | Talks to |
 |---|---|---|---|
 | **Models** | `models/` | Immutable data shapes + JSON | nobody |
-| **Data** | `repositories/`, `dummy_data.dart` | Fetch/persist behind abstract contracts | Models |
+| **Data** | `repositories/`, `fund_catalog.dart`, `real_fund_data.dart` | Fetch/persist behind abstract contracts | Models |
 | **Wiring** | `dependency_injection.dart` | The one place concrete classes are chosen | Repos + Controllers |
 | **State** | `controllers/` | Signals + computed derived state; async actions | Abstract repos |
 | **UI** | `screens/`, `main.dart` | Layout; reads signals via `Watch`, writes on interaction | Controllers via `DI` |

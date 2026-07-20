@@ -22,7 +22,7 @@ const _kStrongReturn = 10.0;
 const double _kNumberCol = 74;
 const double _kPillCol = 84;
 
-/// Per-category avatar colour, keyed by categoryId (see DummyData).
+/// Per-category avatar colour, keyed by categoryId (see FundCatalog).
 const Map<int, Color> _kCategoryColors = {
   1: Color(0xFF0EA5A4), // Money Market — teal
   2: Color(0xFF3B82F6), // Fixed Income — blue

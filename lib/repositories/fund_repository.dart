@@ -1,5 +1,5 @@
 import '../models/fund.dart';
-import 'dummy_data.dart';
+import 'fund_catalog.dart';
 
 /// Contract for reading *and writing* funds — the only entity the
 /// user can create/edit in this app.
@@ -23,9 +23,9 @@ abstract class FundRepository {
 /// list so create/update/deactivate behave like a real backend for the
 /// lifetime of the app session.
 class DummyFundRepository implements FundRepository {
-  // Private working copy — mutating DummyData.funds directly would leak
+  // Private working copy — mutating FundCatalog.funds directly would leak
   // state between repository instances.
-  final List<Fund> _funds = List<Fund>.from(DummyData.funds);
+  final List<Fund> _funds = List<Fund>.from(FundCatalog.funds);
 
   /// Next id for created funds (max existing id + 1, like a SERIAL column).
   int get _nextId =>

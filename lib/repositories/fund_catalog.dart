@@ -1,17 +1,16 @@
-import 'dart:math';
-
 import '../models/fund.dart';
 import '../models/fund_category.dart';
 import '../models/fund_management_company.dart';
-import '../models/fund_performance.dart';
 
-/// In-memory seed data used by the dummy repositories.
+/// In-memory catalog of funds, their categories, and their management
+/// companies — the reference data the dummy repositories serve. The monthly
+/// performance series lives separately in `RealFundData`.
 ///
 /// In iteration 2 this whole file is deleted — the repositories will fetch
 /// the same shapes from Supabase instead. Nothing outside the repositories
 /// folder knows this file exists, which is what makes the swap painless.
-class DummyData {
-  DummyData._(); // no instances — this is a static data holder
+class FundCatalog {
+  FundCatalog._(); // no instances — this is a static data holder
 
   static final DateTime _seedDate = DateTime(2025, 1, 1);
 
@@ -210,59 +209,4 @@ class DummyData {
         createdAt: _seedDate,
         updatedAt: _seedDate,
       );
-
-  /// 12 months of performance rows for every fund (120 rows total),
-  /// generated deterministically so hot-restarts show the same data.
-  static final List<FundPerformance> performance = _generatePerformance();
-
-  /// Typical annual return by category, used as the base level that the
-  /// random jitter moves around: MMFs ~13%, bonds ~14.5%, equities ~8%
-  /// (volatile), balanced ~10.5%.
-  static double _baseRate(int? categoryId) => switch (categoryId) {
-        1 => 13.0,
-        2 => 14.5,
-        3 => 8.0,
-        4 => 10.5,
-        _ => 10.0,
-      };
-
-  /// Builds the performance table month by month:
-  ///  1. For each of the last 12 months, compute a return for every fund
-  ///     (its category base rate + seeded random jitter).
-  ///  2. Sort that month's returns descending and assign rank_position
-  ///     (1 = best), exactly how a real league table would work.
-  static List<FundPerformance> _generatePerformance() {
-    final rows = <FundPerformance>[];
-    final now = DateTime.now();
-    // One Random per fund, seeded by fund id * 7 => stable but distinct series.
-    final randoms = {for (final f in funds) f.fundId: Random(f.fundId * 7)};
-    var id = 1;
-
-    for (var monthsAgo = 11; monthsAgo >= 0; monthsAgo--) {
-      final date = DateTime(now.year, now.month - monthsAgo, 1);
-
-      // Step 1: this month's return for every fund.
-      final monthRates = <int, double>{};
-      for (final fund in funds) {
-        final jitter = (randoms[fund.fundId]!.nextDouble() * 3.0) - 1.5;
-        final rate = _baseRate(fund.categoryId) + jitter;
-        monthRates[fund.fundId] = double.parse(rate.toStringAsFixed(2));
-      }
-
-      // Step 2: rank the month, best return first.
-      final ranked = monthRates.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
-      for (var i = 0; i < ranked.length; i++) {
-        rows.add(FundPerformance(
-          performanceId: id++,
-          fundId: ranked[i].key,
-          performanceDate: date,
-          annualReturnRate: ranked[i].value,
-          rankPosition: i + 1,
-          createdAt: date,
-        ));
-      }
-    }
-    return rows;
-  }
 }

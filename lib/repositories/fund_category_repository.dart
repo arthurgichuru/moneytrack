@@ -1,5 +1,5 @@
 import '../models/fund_category.dart';
-import 'dummy_data.dart';
+import 'fund_catalog.dart';
 
 /// Contract for reading fund categories.
 ///
@@ -11,14 +11,14 @@ abstract class FundCategoryRepository {
   Future<List<FundCategory>> getCategories();
 }
 
-/// Iteration-1 implementation backed by [DummyData].
+/// Iteration-1 implementation backed by [FundCatalog].
 class DummyFundCategoryRepository implements FundCategoryRepository {
   /// Simulates a network round-trip with a short delay so loading
   /// states are actually visible in the UI.
   @override
   Future<List<FundCategory>> getCategories() async {
     await Future<void>.delayed(const Duration(milliseconds: 250));
-    final list = List<FundCategory>.from(DummyData.categories)
+    final list = List<FundCategory>.from(FundCatalog.categories)
       ..sort((a, b) => a.categoryName.compareTo(b.categoryName));
     return list;
   }

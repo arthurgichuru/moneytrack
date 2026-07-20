@@ -1,5 +1,5 @@
 import '../models/fund_performance.dart';
-import 'dummy_data.dart';
+import 'real_fund_data.dart';
 
 /// Contract for reading performance history.
 abstract class FundPerformanceRepository {
@@ -13,12 +13,17 @@ abstract class FundPerformanceRepository {
   Future<Map<int, double>> getLatestReturns();
 }
 
-/// Iteration-1 implementation backed by [DummyData].
+/// Iteration-1 implementation backed by [RealFundData] — real published
+/// (and, where unavailable, estimated) monthly returns; see that file's
+/// provenance notes. The fund/category/company seed still comes from
+/// `FundCatalog`; only the performance series is real.
 class DummyFundPerformanceRepository implements FundPerformanceRepository {
   @override
   Future<List<FundPerformance>> getPerformanceForFund(int fundId) async {
     await Future<void>.delayed(const Duration(milliseconds: 350));
-    final rows = DummyData.performance.where((p) => p.fundId == fundId).toList()
+    final rows = RealFundData.performance
+        .where((p) => p.fundId == fundId)
+        .toList()
       ..sort((a, b) => a.performanceDate.compareTo(b.performanceDate));
     return rows;
   }
@@ -27,12 +32,12 @@ class DummyFundPerformanceRepository implements FundPerformanceRepository {
   Future<Map<int, double>> getLatestReturns() async {
     await Future<void>.delayed(const Duration(milliseconds: 350));
     // Find the newest performance_date in the table...
-    final latestDate = DummyData.performance
+    final latestDate = RealFundData.performance
         .map((p) => p.performanceDate)
         .reduce((a, b) => a.isAfter(b) ? a : b);
     // ...then build the {fundId: rate} map for that month only.
     return {
-      for (final p in DummyData.performance)
+      for (final p in RealFundData.performance)
         if (p.performanceDate == latestDate && p.annualReturnRate != null)
           p.fundId: p.annualReturnRate!,
     };
