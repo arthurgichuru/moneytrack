@@ -47,14 +47,35 @@ class _FundsListScreenState extends State<FundsListScreen> {
   final _categoryController = DI.categoryController;
   final _performanceController = DI.performanceController;
 
-  /// Kick off the three initial loads. They write into signals when they
-  /// complete, so the UI updates itself — no await, no setState needed.
+  /// The category the list opens on. There is no "All" tab, so a category
+  /// is always selected — Money Market by default.
+  static const _defaultCategory = 'Money Market';
+
+  /// Kick off the initial loads. They write into signals when they complete,
+  /// so the UI updates itself — no await, no setState needed. Once categories
+  /// arrive, default the filter to Money Market (only on first run, so a
+  /// choice the user made before navigating away is preserved).
   @override
   void initState() {
     super.initState();
     _fundController.loadFunds();
-    _categoryController.loadCategories();
     _performanceController.loadLatestReturns();
+    _categoryController.loadCategories().then((_) {
+      if (!mounted) return;
+      if (_fundController.selectedCategoryId.value == null) {
+        _selectDefaultCategory();
+      }
+    });
+  }
+
+  /// Selects the Money Market category (no-op if it isn't loaded yet).
+  void _selectDefaultCategory() {
+    for (final c in _categoryController.categories.value) {
+      if (c.categoryName == _defaultCategory) {
+        _fundController.selectedCategoryId.value = c.categoryId;
+        return;
+      }
+    }
   }
 
   @override
@@ -112,11 +133,11 @@ class _FundsListScreenState extends State<FundsListScreen> {
           const SizedBox(width: 4),
           IconButton(
             icon: const Icon(Icons.more_horiz, color: Colors.black),
-            tooltip: 'Clear filters',
-            // Resets both the search text and the category selection.
+            tooltip: 'Reset',
+            // Clears the search text and returns to the default category.
             onPressed: () {
               _fundController.searchQuery.value = '';
-              _fundController.selectedCategoryId.value = null;
+              _selectDefaultCategory();
             },
           ),
         ],
@@ -124,13 +145,21 @@ class _FundsListScreenState extends State<FundsListScreen> {
     );
   }
 
-  /// Horizontal, gold-underlined category tabs ("All" + one per category),
-  /// replacing the old ChoiceChips. Wrapped in Watch because it reads the
-  /// (async-loaded) category list and the current selection.
+  /// Horizontal, gold-underlined category tabs — one per category, Money
+  /// Market first (no "All" tab; a category is always selected). Wrapped in
+  /// Watch because it reads the (async-loaded) category list and the
+  /// current selection.
   Widget _buildCategoryTabs() {
     return Watch((context) {
-      final categories = _categoryController.categories.value;
       final selectedId = _fundController.selectedCategoryId.value;
+
+      // Money Market first, then the rest alphabetically.
+      final categories = [..._categoryController.categories.value]
+        ..sort((a, b) {
+          if (a.categoryName == _defaultCategory) return -1;
+          if (b.categoryName == _defaultCategory) return 1;
+          return a.categoryName.compareTo(b.categoryName);
+        });
 
       return SizedBox(
         height: 44,
@@ -138,20 +167,13 @@ class _FundsListScreenState extends State<FundsListScreen> {
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           children: [
-            _CategoryTab(
-              label: 'All',
-              selected: selectedId == null,
-              onTap: () => _fundController.selectedCategoryId.value = null,
-            ),
             for (final category in categories)
               _CategoryTab(
                 label: category.categoryName,
                 selected: selectedId == category.categoryId,
-                // Tapping the active tab clears the filter (toggle).
+                // Always selects this category (no toggle-to-"all").
                 onTap: () => _fundController.selectedCategoryId.value =
-                    selectedId == category.categoryId
-                        ? null
-                        : category.categoryId,
+                    category.categoryId,
               ),
           ],
         ),
