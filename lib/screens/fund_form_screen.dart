@@ -4,6 +4,11 @@ import 'package:signals/signals_flutter.dart';
 import '../dependency_injection.dart';
 import '../models/fund.dart';
 
+// ---- Design tokens (shared look with the markets list / detail) ----------
+const _kGold = Color(0xFFF0B90B);
+const _kFieldBg = Color(0xFFF3F4F6);
+const _kTextSecondary = Color(0xFF8A8A8E);
+
 /// Create/edit form. One screen handles both modes:
 ///  - existingFund == null  -> "Add fund" (fundId 0 signals a create)
 ///  - existingFund != null  -> "Edit fund" (fields pre-filled)
@@ -85,6 +90,30 @@ class _FundFormScreenState extends State<FundFormScreen> {
   /// stay NULL instead of storing empty strings.
   String? _emptyToNull(String text) => text.trim().isEmpty ? null : text.trim();
 
+  /// Shared filled-input styling: soft grey fill, rounded corners, and a
+  /// gold focus ring — matching the search pill and the rest of the theme.
+  InputDecoration _decoration(String label) => InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: _kTextSecondary),
+        floatingLabelStyle: const TextStyle(color: Colors.black),
+        filled: true,
+        fillColor: _kFieldBg,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: _kGold, width: 1.5),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -96,26 +125,24 @@ class _FundFormScreenState extends State<FundFormScreen> {
           children: [
             TextFormField(
               controller: _nameController,
-              decoration: const InputDecoration(
-                  labelText: 'Fund name *', border: OutlineInputBorder()),
+              decoration: _decoration('Fund name *'),
               textCapitalization: TextCapitalization.words,
               // Only truly required field — mirrors NOT NULL in the schema.
               validator: (value) => (value == null || value.trim().isEmpty)
                   ? 'Fund name is required'
                   : null,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             TextFormField(
               controller: _codeController,
-              decoration: const InputDecoration(
-                  labelText: 'Fund code', border: OutlineInputBorder()),
+              decoration: _decoration('Fund code'),
               textCapitalization: TextCapitalization.characters,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             _buildCategoryDropdown(),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             _buildCompanyDropdown(),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             Row(
               children: [
                 Expanded(child: _buildCurrencyDropdown()),
@@ -123,9 +150,7 @@ class _FundFormScreenState extends State<FundFormScreen> {
                 Expanded(
                   child: TextFormField(
                     controller: _feeController,
-                    decoration: const InputDecoration(
-                        labelText: 'Mgmt fee % p.a.',
-                        border: OutlineInputBorder()),
+                    decoration: _decoration('Mgmt fee % p.a.'),
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
                     // Optional, but if present it must parse as a number.
@@ -139,35 +164,52 @@ class _FundFormScreenState extends State<FundFormScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             TextFormField(
               controller: _descriptionController,
-              decoration: const InputDecoration(
-                  labelText: 'Description', border: OutlineInputBorder()),
+              decoration: _decoration('Description'),
               maxLines: 2,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             TextFormField(
               controller: _objectiveController,
-              decoration: const InputDecoration(
-                  labelText: 'Investment objective',
-                  border: OutlineInputBorder()),
+              decoration: _decoration('Investment objective'),
               maxLines: 2,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 28),
             // Watch so the button disables + shows progress while
             // FundController.saveFund is running.
             Watch((context) {
               final saving = _fundController.isLoading.value;
-              return FilledButton.icon(
-                onPressed: saving ? null : _save,
-                icon: saving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.check),
-                label: Text(_isEditing ? 'Save changes' : 'Create fund'),
+              return SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _kGold,
+                    foregroundColor: Colors.black,
+                    disabledBackgroundColor: _kGold.withValues(alpha: 0.5),
+                    minimumSize: const Size.fromHeight(52),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  onPressed: saving ? null : _save,
+                  icon: saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.black,
+                          ),
+                        )
+                      : const Icon(Icons.check),
+                  label: Text(_isEditing ? 'Save changes' : 'Create fund'),
+                ),
               );
             }),
           ],
@@ -183,8 +225,8 @@ class _FundFormScreenState extends State<FundFormScreen> {
       final categories = _categoryController.categories.value;
       return DropdownButtonFormField<int>(
         initialValue: _categoryId,
-        decoration: const InputDecoration(
-            labelText: 'Category', border: OutlineInputBorder()),
+        decoration: _decoration('Category'),
+        borderRadius: BorderRadius.circular(12),
         items: [
           for (final c in categories)
             DropdownMenuItem(value: c.categoryId, child: Text(c.categoryName)),
@@ -200,8 +242,8 @@ class _FundFormScreenState extends State<FundFormScreen> {
       final companies = _fundController.companies.value;
       return DropdownButtonFormField<int>(
         initialValue: _companyId,
-        decoration: const InputDecoration(
-            labelText: 'Fund manager', border: OutlineInputBorder()),
+        decoration: _decoration('Fund manager'),
+        borderRadius: BorderRadius.circular(12),
         items: [
           for (final c in companies)
             DropdownMenuItem(value: c.companyId, child: Text(c.companyName)),
@@ -215,8 +257,8 @@ class _FundFormScreenState extends State<FundFormScreen> {
   Widget _buildCurrencyDropdown() {
     return DropdownButtonFormField<String>(
       initialValue: _currency,
-      decoration: const InputDecoration(
-          labelText: 'Currency', border: OutlineInputBorder()),
+      decoration: _decoration('Currency'),
+      borderRadius: BorderRadius.circular(12),
       items: const [
         DropdownMenuItem(value: 'KES', child: Text('KES')),
         DropdownMenuItem(value: 'USD', child: Text('USD')),
