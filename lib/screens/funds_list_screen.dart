@@ -30,6 +30,11 @@ const Map<int, Color> _kCategoryColors = {
   4: Color(0xFF8B5CF6), // Balanced — violet
 };
 
+/// Which column the fund list is sorted by (tap a header to change it).
+/// `latest` and `returns` compare the same value — a fund's latest return —
+/// but are kept distinct so the arrow shows on whichever header was tapped.
+enum _SortColumn { manager, latest, returns }
+
 /// Home screen: search box + category tabs + the filtered fund list.
 ///
 /// Note how little state lives in the widget itself — everything is read
@@ -75,6 +80,57 @@ class _FundsListScreenState extends State<FundsListScreen> {
         _fundController.selectedCategoryId.value = c.categoryId;
         return;
       }
+    }
+  }
+
+  // ------------------------------------------------------------ sorting
+  // Tapping a column header sorts by it; tapping again flips direction.
+  _SortColumn? _sortColumn; // null => default (fund-name order)
+  bool _sortAscending = true;
+
+  void _onSort(_SortColumn column) {
+    setState(() {
+      if (_sortColumn == column) {
+        _sortAscending = !_sortAscending;
+      } else {
+        _sortColumn = column;
+        _sortAscending = true;
+      }
+    });
+  }
+
+  /// Sorts the (already filtered) funds by the active column. Ties fall back
+  /// to fund-name order; funds with no latest return always sort to the end.
+  List<Fund> _sortedFunds(List<Fund> funds) {
+    final column = _sortColumn;
+    if (column == null) return funds; // filteredFunds is already name-sorted
+    final asc = _sortAscending;
+    int byName(Fund a, Fund b) =>
+        a.fundName.toLowerCase().compareTo(b.fundName.toLowerCase());
+
+    switch (column) {
+      case _SortColumn.manager:
+        final companies = _fundController.companiesById.value;
+        String mgr(Fund f) =>
+            (companies[f.companyId]?.companyName ?? '').toLowerCase();
+        return [...funds]..sort((a, b) {
+            final c = mgr(a).compareTo(mgr(b));
+            final base = c != 0 ? c : byName(a, b);
+            return asc ? base : -base;
+          });
+      case _SortColumn.latest:
+      case _SortColumn.returns:
+        final latest = _performanceController.latestReturns.value;
+        return [...funds]..sort((a, b) {
+            final ra = latest[a.fundId];
+            final rb = latest[b.fundId];
+            if (ra == null && rb == null) return byName(a, b);
+            if (ra == null) return 1; // nulls last, both directions
+            if (rb == null) return -1;
+            final c = ra.compareTo(rb);
+            final base = c != 0 ? c : byName(a, b);
+            return asc ? base : -base;
+          });
     }
   }
 
@@ -181,23 +237,57 @@ class _FundsListScreenState extends State<FundsListScreen> {
     });
   }
 
-  /// Column labels that line up with each row: Name | Latest | Return.
+  /// Tappable column headers: tap to sort by that column, tap again to flip
+  /// direction. An arrow marks the active column.
   Widget _buildColumnHeader() {
-    const style = TextStyle(fontSize: 12, color: _kTextSecondary);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: Row(
         children: [
-          const Expanded(child: Text('Name / Manager', style: style)),
-          const SizedBox(
+          Expanded(child: _sortHeader('Name / Manager', _SortColumn.manager)),
+          SizedBox(
             width: _kNumberCol,
-            child: Text('Latest', style: style, textAlign: TextAlign.right),
+            child: _sortHeader('Latest', _SortColumn.latest, alignEnd: true),
           ),
           const SizedBox(width: 12),
-          const SizedBox(
+          SizedBox(
             width: _kPillCol,
-            child: Text('Return', style: style, textAlign: TextAlign.right),
+            child: _sortHeader('Return', _SortColumn.returns, alignEnd: true),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// One clickable header label, with a sort arrow when it's the active column.
+  Widget _sortHeader(String label, _SortColumn column,
+      {bool alignEnd = false}) {
+    final active = _sortColumn == column;
+    return InkWell(
+      onTap: () => _onSort(column),
+      child: Row(
+        mainAxisAlignment:
+            alignEnd ? MainAxisAlignment.end : MainAxisAlignment.start,
+        children: [
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: active ? Colors.black : _kTextSecondary,
+                fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ),
+          if (active) ...[
+            const SizedBox(width: 2),
+            Icon(
+              _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+              size: 13,
+              color: _kGold,
+            ),
+          ],
         ],
       ),
     );
@@ -229,7 +319,7 @@ class _FundsListScreenState extends State<FundsListScreen> {
         );
       }
 
-      final funds = _fundController.filteredFunds.value;
+      final funds = _sortedFunds(_fundController.filteredFunds.value);
       if (funds.isEmpty) {
         return const Center(child: Text('No funds match your filters.'));
       }
