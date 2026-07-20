@@ -875,10 +875,34 @@ deliberate no-op — a placeholder whose doc comment sketches the iteration-2
 has the right shape; iteration 2 fills in the body without touching `main()`'s
 structure.
 
-The root widget `MoneyTrackApp` (`main.dart:21-37`) is intentionally thin: a
-`MaterialApp` with a seeded Material 3 theme and `home: FundsListScreen()`. All
-state lives in controllers; all UI lives in screens; the root just wires a theme
-and the first route.
+The root widget `MoneyTrackApp` (`main.dart:21-55`) is intentionally thin: a
+`MaterialApp` with a Material 3 theme and `home: FundsListScreen()`. All state
+lives in controllers; all UI lives in screens; the root just wires a theme and
+the first route.
+
+The theme itself is a **Binance-style light theme** — white surfaces, black
+text, a gold accent (`0xFFF0B90B`), and a flat white app bar with no elevation:
+
+```dart
+const gold = Color(0xFFF0B90B);
+theme: ThemeData(
+  useMaterial3: true,
+  scaffoldBackgroundColor: Colors.white,
+  colorScheme: ColorScheme.fromSeed(seedColor: gold, brightness: Brightness.light)
+      .copyWith(surface: Colors.white),
+  appBarTheme: const AppBarTheme(
+    backgroundColor: Colors.white, foregroundColor: Colors.black,
+    elevation: 0, scrolledUnderElevation: 0, centerTitle: false,
+    titleTextStyle: TextStyle(color: Colors.black, fontSize: 22,
+        fontWeight: FontWeight.bold),
+  ),
+);
+```
+
+The green/red gain-loss colours aren't in the global theme — they're per-screen
+design tokens (`_kGreen`, `_kRed`, `_kGold`, …) declared at the top of each
+screen file, so the reactive widgets can pick a colour from a value at build
+time. Keep this "theme vs. tokens" split in mind as you read the screens.
 
 ---
 
@@ -916,11 +940,22 @@ These are fired without `await`. They write into signals when they finish, and
 the `Watch` widgets below repaint themselves — so there's no need to await or
 `setState`. The screen builds immediately; the data catches up.
 
-**The layout** is a `Column` of three pieces (`funds_list_screen.dart:47-54`):
-a search field, a horizontal strip of category chips, and the fund list filling
-the rest.
+> **The redesign, and why the walkthrough barely changes.** The list, detail,
+> and form screens were later restyled into a Binance-style markets view. This
+> is worth pausing on: the visual overhaul touched **only the widget tree** —
+> every controller, signal, and `computed` stayed exactly the same. The screens
+> still read the same signals and write the same ones on interaction. That a
+> full reskin was possible without opening a single controller file is the
+> clearest practical proof of the layered design: presentation and state are
+> genuinely decoupled. The sections below describe the current (redesigned) UI.
 
-**The search box** (`funds_list_screen.dart:60-73`) is where the reactive model
+**The layout** is a `Column` (`funds_list_screen.dart:72-80`) of four pieces: a
+search row, a gold-underlined category-tab strip, a column header, and the fund
+list filling the rest. Design tokens (`_kGold`, `_kGreen`, `_kRed`,
+`_kCategoryColors`, `_kStrongReturn = 10.0`, …) sit at the top of the file
+(`:9-31`).
+
+**The search row** (`funds_list_screen.dart:86`) is where the reactive model
 shines. Its entire behaviour is one line:
 
 ```dart
@@ -929,42 +964,45 @@ onChanged: (text) => _fundController.searchQuery.value = text,
 
 That's the whole search feature. Typing writes to `searchQuery` →
 `filteredFunds` recomputes → the list repaints. No debounce logic, no listener,
-no filtering code in the widget. Note the `TextField` itself isn't wrapped in a
-`Watch` — it only *writes*, it doesn't *read* a signal, so it never needs to
-rebuild.
+no filtering code in the widget. The `TextField` itself isn't wrapped in a
+`Watch` — it only *writes*, it doesn't *read* a signal, so it never rebuilds.
+Beside it sits a "…" `IconButton` that clears both the search text and the
+category selection in one tap (`:117-120`) — two signal writes, and the list
+falls back to showing everything.
 
-**The category chips** *do* read signals, so they're wrapped in `Watch`
-(`funds_list_screen.dart:78-110`):
+**The category tabs** replaced the old chips with gold-underlined tabs
+(`funds_list_screen.dart:130`, rendered by the `_CategoryTab` widget at `:232`),
+but the reactive shape is identical — still one `Watch` reading two signals:
 
 ```dart
 Watch((context) {
   final categories = _categoryController.categories.value;  // async-loaded
   final selectedId = _fundController.selectedCategoryId.value;
-  return SingleChildScrollView(
-    scrollDirection: Axis.horizontal,
-    child: Row(children: [
-      ChoiceChip(label: const Text('All'), selected: selectedId == null,
-        onSelected: (_) => _fundController.selectedCategoryId.value = null),
-      for (final category in categories) ...[
-        ChoiceChip(
-          label: Text(category.categoryName),
-          selected: selectedId == category.categoryId,
-          // tapping the active chip clears the filter (toggle)
-          onSelected: (_) => _fundController.selectedCategoryId.value =
-              selectedId == category.categoryId ? null : category.categoryId),
-      ],
-    ]),
-  );
+  return ListView(scrollDirection: Axis.horizontal, children: [
+    _CategoryTab(label: 'All', selected: selectedId == null,
+      onTap: () => _fundController.selectedCategoryId.value = null),
+    for (final category in categories)
+      _CategoryTab(
+        label: category.categoryName,
+        selected: selectedId == category.categoryId,
+        // tapping the active tab clears the filter (toggle)
+        onTap: () => _fundController.selectedCategoryId.value =
+            selectedId == category.categoryId ? null : category.categoryId),
+  ]);
 });
 ```
 
-Because the builder reads both `categories` and `selectedCategoryId`, the chip
-row appears when categories finish loading **and** restyles when the selection
-changes. Selecting a chip writes `selectedCategoryId`, which — again —
-recomputes `filteredFunds` and repaints the list.
+`_CategoryTab` is a pure presentation widget: the label goes bold black with a
+gold underline when `selected`, muted grey otherwise. Because the builder reads
+both `categories` and `selectedCategoryId`, the strip appears when categories
+finish loading **and** restyles when the selection changes. Tapping a tab writes
+`selectedCategoryId`, which — again — recomputes `filteredFunds` and repaints
+the list. A static `_buildColumnHeader` (`:163`) prints the `Name / Manager ·
+Latest · Return` labels, aligned to the row columns via shared width constants
+(`_kNumberCol`, `_kPillCol`).
 
 **The list body** handles all four async states in one `Watch`
-(`funds_list_screen.dart:114-155`), read top to bottom as a priority ladder:
+(`funds_list_screen.dart:186`), read top to bottom as a priority ladder:
 
 ```dart
 Watch((context) {
@@ -981,118 +1019,166 @@ the *first* load, not on a pull-to-refresh when we already have data to display.
 The data case wraps a `ListView.builder` in a `RefreshIndicator` whose `onRefresh`
 re-runs both `loadFunds()` and `loadLatestReturns()`.
 
-**A single row — `_FundTile`** (`funds_list_screen.dart:160-198`) is split into
-its own widget so each row rebuilds independently. It has its own `Watch`:
+**A single row — `_FundTile`** (`funds_list_screen.dart:280`) is split into its
+own widget so each row rebuilds independently. It has its own `Watch`, and now
+renders a three-column flat row — avatar + ticker/name·manager, a latest-return
++ fee number block, and a solid return pill:
 
 ```dart
 Watch((context) {
   final company = fundController.companiesById.value[fund.companyId];
   final latestReturn = performanceController.latestReturns.value[fund.fundId];
-  return Card(child: ListTile(
-    title: Text(fund.fundName),
-    subtitle: Text([if (fund.fundCode != null) fund.fundCode!,
-                    if (company != null) company.companyName].join(' · ')),
-    trailing: latestReturn == null ? null : _ReturnBadge(returnRate: latestReturn),
+  return InkWell(
     onTap: () => Navigator.push(... FundDetailScreen(fund: fund)),
-  ));
+    child: Row(children: [
+      _CategoryAvatar(fund: fund),                       // colour by category
+      Expanded(child: Column(children: [                 // ticker + name·manager
+        Text(fund.fundCode ?? fund.fundName, /* bold */),
+        Text([fund.fundName, if (company != null) company.companyName].join(' · ')),
+      ])),
+      SizedBox(width: _kNumberCol, child: Column(children: [  // latest return + fee
+        Text(latestReturn == null ? '—' : '${latestReturn.toStringAsFixed(2)}%'),
+        Text('${fund.managementFee!.toStringAsFixed(2)}% p.a.'),
+      ])),
+      SizedBox(width: _kPillCol, child: latestReturn == null
+          ? const SizedBox.shrink()
+          : _ReturnPill(returnRate: latestReturn)),       // green/red pill
+    ]),
+  );
 });
 ```
 
-This is why the return badge "pops in" a moment after the row appears: the row
-renders as soon as `filteredFunds` has data, but the badge reads
-`latestReturns`, which is populated by a *separate* async call. When that call
-finishes, only the trailing badge repaints — because that's the only thing
-inside this `Watch` that read the changed signal. The `_ReturnBadge`
-(`funds_list_screen.dart:202-222`) is a pure presentation widget: green pill if
-the return ≥ 10%, amber below.
+This is why the numbers "pop in" a moment after the row appears: the row renders
+as soon as `filteredFunds` has data (identity + fee come from the `Fund` itself),
+but the return column and pill read `latestReturns`, which is populated by a
+*separate* async call. When that call finishes, only those parts repaint —
+they're the only things inside this `Watch` that read the changed signal.
+
+Two pure presentation helpers finish the row:
+- **`_CategoryAvatar`** (`:390`) — a circle coloured from `_kCategoryColors` by
+  the fund's `categoryId`, showing the first two letters of the code.
+- **`_ReturnPill`** (`:419`) — a solid rounded pill, **green** at or above
+  `_kStrongReturn` (10%), **red** below (`:426`). The colour is chosen from the
+  value at build time — exactly the "theme vs. tokens" split from §8.
 
 ### 9.2 `FundDetailScreen` — reading derived state
 
 Opened with a specific `Fund`. In `initState` it triggers one load
-(`fund_detail_screen.dart:26-32`):
+(`fund_detail_screen.dart:53-58`):
 
 ```dart
 _performanceController.loadHistory(widget.fund.fundId);
 ```
 
 That single call populates `history`, and — as we saw in §7.3 — the four
-performance computeds refresh off it. The screen body is a `ListView` of cards:
-stats row, chart, fund facts, manager, history table
-(`fund_detail_screen.dart:56-68`).
+performance computeds refresh off it. The redesigned screen is a single
+scrolling `ListView` (`:69-86`): a custom header, a gold-underlined "Overview"
+label, a headline, the chart card, a disclaimer, a stats card, the manager card,
+and the monthly history. It also holds one piece of local UI state — the
+selected chart range (`int _rangeMonths = 12`, `:50`).
 
-**The stats row** (`fund_detail_screen.dart:103-122`) is one `Watch` reading
-three computeds:
+**The header** (`fund_detail_screen.dart:94`) is a custom row — back arrow,
+category avatar, `fundCode` + fund name, and the edit/delete actions (delete is
+the soft-delete confirm flow, `:539`). It reads only `widget.fund`, so it needs
+no `Watch`.
+
+**The headline** (`fund_detail_screen.dart:191`) is one `Watch` over three
+computeds plus the category lookup:
 
 ```dart
 Watch((context) {
-  final latest   = _performanceController.latestReturn.value;
-  final average  = _performanceController.averageReturn.value;
+  final latest   = _performanceController.latestReturn.value;   // big number
+  final average  = _performanceController.averageReturn.value;  // subline
   final bestRank = _performanceController.bestRank.value;
-  String pct(double? v) => v == null ? '—' : '${v.toStringAsFixed(2)}%';
-  return Row(children: [
-    _StatTile(label: 'Latest return', value: pct(latest)),
-    _StatTile(label: '12-mo average', value: pct(average)),
-    _StatTile(label: 'Best rank', value: bestRank == null ? '—' : '#$bestRank'),
-  ]);
+  final category = _categoryController.categoriesById.value[widget.fund.categoryId];
+  final avgColor = (average ?? 0) >= _kStrongReturn ? _kGreen : _kRed;
+  // 34pt latest-return %, a category pill, then "avg X% · best rank #N · Past 12 months"
 });
 ```
 
-Each tile shows an em-dash while data is loading (the computeds return `null` on
-empty history) and fills in when `loadHistory` completes — all three at once,
-from one `Watch`.
+The big latest-return figure sits next to an outlined **category pill**; beneath
+it the 12-month average is coloured green/red by the same 10% rule, followed by
+the best rank. Everything shows an em-dash while `history` is empty and fills in
+together when `loadHistory` completes.
 
-**The chart card** (`fund_detail_screen.dart:126-159`) wraps its inner painter
-in a `Watch` that switches on `isLoadingHistory`, then requires at least two
-points (`values.length < 2`) before drawing — you can't draw a line from one
-point. It feeds `chartValues` straight into a `CustomPaint`:
+**The chart card** (`fund_detail_screen.dart:263`) is the most involved piece.
+Its `Watch` switches on `isLoadingHistory`, then **slices** the series to the
+selected range before drawing:
 
 ```dart
-final values = _performanceController.chartValues.value;
+final all = _performanceController.chartValues.value;
+final take = _rangeMonths.clamp(0, all.length);
+final values = all.sublist(all.length - take);   // last N months
 if (values.length < 2) return const Center(child: Text('Not enough data'));
-return CustomPaint(painter: _SparklinePainter(
-  values: values, color: Theme.of(context).colorScheme.primary));
+final up = values.last >= values.first;          // trend over the window
+final color = up ? _kGreen : _kRed;
+return Row(children: [
+  Expanded(child: CustomPaint(painter: _AreaChartPainter(values: values, color: color))),
+  _buildAxisLabels(minV, maxV),                  // 5 return labels down the right edge
+]);
 ```
 
-**`_SparklinePainter`** (`fund_detail_screen.dart:331-392`) is the one piece of
+Three things to notice:
+- **The range selector is real, not decorative.** `_kRanges` (`:30`) maps
+  `3M/6M/1Y` to `3/6/12` trailing months; `_RangeChip` (`:617`) writes
+  `_rangeMonths` via `setState`, and the slice above re-derives the visible
+  window. Because `setState` re-runs `build`, the chart's `Watch` re-reads
+  `chartValues` and redraws — signals and local state cooperating.
+- **The line colour tracks the trend** of the *visible* window (green if it ends
+  higher than it starts, red otherwise) — which is why a money-market fund draws
+  green and a weak equity fund draws red, with no hardcoding.
+- **`_buildAxisLabels`** (`:316`) prints five evenly-spaced return values down
+  the right edge, from the window's max at top to its min at bottom.
+
+**`_AreaChartPainter`** (`fund_detail_screen.dart:654`) is the one piece of
 "hard" code — pure canvas math, no chart package. Worth reading in four steps:
 
-1. **Normalise** (`:341-352`): find `min`/`max` of the series, then map each
-   value to a `0..1` height within that range (with padding so the line never
-   kisses the card edges). `range` guards against divide-by-zero when all values
-   are equal.
-2. **Line path** (`:355-358`): `moveTo` the first point, `lineTo` each
-   subsequent one — a polyline through all 12 months.
-3. **Fill path** (`:362-374`): clone the line, drop it to the bottom corners and
-   `close()` it, then paint with a top-to-bottom gradient that fades to
-   transparent — the "area chart" look.
-4. **Stroke + dot** (`:377-385`): draw the line on top, then a filled circle on
+1. **Normalise** (`:669-680`): find `min`/`max` of the visible series, then map
+   each value to a `0..1` height within that range (with `_pad` breathing room).
+   `range` guards against divide-by-zero when all values are equal.
+2. **Smooth curve** (`:682-696`): rather than a raw polyline, the points are
+   joined with a **Catmull-Rom spline expressed as cubic Béziers** (`cubicTo`,
+   tension 0.5). For each segment the two Bézier control points are derived from
+   the neighbouring points, so the line flows through every month's actual value
+   with soft peaks and valleys instead of hard corners.
+3. **Fill path** (`:699-711`): clone the smoothed line, drop it to the bottom
+   corners and `close()` it, then paint with a top-to-bottom gradient that fades
+   to transparent — the "area chart" look.
+4. **Stroke + dot** (`:713-722`): draw the curve on top, then a filled circle on
    the latest month.
 
-`shouldRepaint` (`:390-391`) returns true only when `values` or `color` changed,
+`shouldRepaint` (`:726-727`) returns true only when `values` or `color` changed,
 so the canvas isn't redrawn needlessly.
 
-**Fund facts** and **manager card** (`fund_detail_screen.dart:164-231`) are both
-wrapped in `Watch` because they resolve foreign keys through the computed lookup
-tables — `categoriesById[fund.categoryId]` and
-`companiesById[fund.companyId]`. These maps may populate *after* the detail
-screen first builds (categories/companies load asynchronously), so `Watch`
-ensures the labels fill in the moment those maps are ready. The manager card
-returns `SizedBox.shrink()` (renders nothing) if the company isn't found.
+**The stats card** (`fund_detail_screen.dart:367`) is a grey rounded card with a
+two-column grid, built inside a `Watch` that reads `history` and the performance
+computeds. It surfaces real fund + performance figures — latest return, 12-mo
+average, best rank, this-month rank, best/weakest month (min/max over `history`),
+management fee, currency, category, and risk level — each rendered by a small
+`_statCell` helper.
 
-**History table** (`fund_detail_screen.dart:234-280`) reads `history` reversed
+**The manager card** (`fund_detail_screen.dart:466`) is wrapped in `Watch`
+because it resolves a foreign key through the `companiesById` computed lookup,
+which may populate *after* the screen first builds. It returns
+`SizedBox.shrink()` (renders nothing) if the company isn't found.
+
+**The history card** (`fund_detail_screen.dart:504`) reads `history` reversed
 (newest first) and lays out a `date | return% | #rank` row per month, using
 `intl`'s `DateFormat('MMM yyyy')` for the month labels.
 
 ### 9.3 `FundFormScreen` — create and edit in one screen
 
 This is the app's only *input* screen, and it demonstrates the **deliberate
-boundary between signals and local state**.
+boundary between signals and local state**. Like the other two, it was restyled
+to match the theme — filled rounded inputs with a gold focus ring (a shared
+`_decoration` helper at `fund_form_screen.dart:95`) and a full-width gold primary
+button — with **no change to its logic**.
 
-**One widget, two modes** (`fund_form_screen.dart:10-45`): the constructor takes
+**One widget, two modes** (`fund_form_screen.dart:15-50`): the constructor takes
 an optional `existingFund`. Null → "Add" mode; non-null → "Edit" mode with
 fields pre-filled. `_isEditing` is just `existingFund != null`.
 
-**Local state, *not* signals** (`fund_form_screen.dart:30-43`). The text fields
+**Local state, *not* signals** (`fund_form_screen.dart:35-48`). The text fields
 use `TextEditingController`s and the dropdowns use plain fields mutated with
 `setState`:
 
@@ -1103,7 +1189,7 @@ late int? _categoryId = widget.existingFund?.categoryId;
 late String _currency = widget.existingFund?.currency ?? 'KES';
 ```
 
-The comment at `fund_form_screen.dart:27-29` states the rule explicitly:
+The comment at `fund_form_screen.dart:32-34` states the rule explicitly:
 
 > Text inputs use controllers; dropdowns use plain fields + setState, because
 > this is *ephemeral, screen-local* state — signals are reserved for state that
@@ -1113,17 +1199,17 @@ This is a key architectural judgement. A half-typed form is nobody else's
 business, so it stays local; it would be wrong to pollute app-wide signals with
 it. Signals are for *shared or surviving* state; `setState`/controllers are for
 *throwaway* state. (And because controllers hold native resources, `dispose()`
-at `:48-56` tears them down.)
+at `:54-61` tears them down.)
 
 **The dropdowns still read signals**, so they're wrapped in `Watch`
-(`fund_form_screen.dart:181-212`): the Category options come from
+(`fund_form_screen.dart:223` onward): the Category options come from
 `_categoryController.categories` and the Fund-manager options from
 `_fundController.companies`. That means the pickers populate automatically once
 those async loads finish — even though the *selection* is local state. Currency
 is a plain, non-`Watch` dropdown because nothing it depends on is async
-(`:215-226`).
+(`:257`).
 
-**Saving** (`fund_form_screen.dart:60-82`) is the round-trip back down through
+**Saving** (`fund_form_screen.dart:65-87`) is the round-trip back down through
 the layers:
 
 ```dart
@@ -1148,20 +1234,20 @@ Three things close the loop:
 - The screen **never touches a repository** — it builds a `Fund` and hands it to
   `_fundController.saveFund`. The controller decides create-vs-update from the
   `fundId == 0` convention.
-- `_emptyToNull` (`:86`) turns whitespace-only inputs into `null`, so optional DB
+- `_emptyToNull` (`:91`) turns whitespace-only inputs into `null`, so optional DB
   columns stay `NULL` rather than storing empty strings.
 - On success the form pops. Back on the list screen, `filteredFunds` already
   reflects the change (the controller updated `funds`), so the new/edited fund is
   simply *there* — no manual refresh.
 
-The save button itself is wrapped in `Watch` (`fund_form_screen.dart:160-172`)
-so it disables and shows an inline spinner while `_fundController.isLoading` is
-true — reusing the very same signal the list screen reads.
+The save button itself is wrapped in `Watch` (`fund_form_screen.dart:182`) so it
+disables and shows an inline spinner while `_fundController.isLoading` is true —
+reusing the very same signal the list screen reads.
 
 **Validation** uses standard Flutter `Form` machinery: the `GlobalKey<FormState>`
 runs every field's `validator` at once. Only `fundName` is required (mirroring a
-`NOT NULL` column, `:103-105`); the fee is optional but must parse as a number if
-present (`:132-137`).
+`NOT NULL` column, `:131-133`); the fee is optional but must parse as a number if
+present (`:157-162`).
 
 ---
 
@@ -1181,9 +1267,9 @@ every layer.
 4. ~350ms later `loadFunds` sets `funds` and `companies`. `filteredFunds`
    recomputes (10 funds), the list `Watch` repaints into rows.
 5. `loadLatestReturns` finishes; each `_FundTile`'s `Watch` sees `latestReturns`
-   change and paints its return badge in.
-6. `loadCategories` finishes; the chip row's `Watch` sees `categories` and
-   renders the filter chips.
+   change and paints its return column + green/red pill in.
+6. `loadCategories` finishes; the tab strip's `Watch` sees `categories` and
+   renders the category tabs.
 
 Each async result lands independently and repaints only the widgets that read
 the signal it touched. The three loads race in parallel and each paints in when
